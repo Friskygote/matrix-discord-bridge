@@ -41,7 +41,7 @@ class MatrixClient(AppService):
             return
         
         if message.body.startswith("!eval"):
-            msg = eval(message[message.body.find(" ")+1:])
+            msg = eval(message.body[message.body.find(" ")+1:])
             # Yeah, unsafe eval, fite me
             if msg:
                 self.send_message(message.room_id, self.create_message_event(msg, {}))
@@ -307,7 +307,7 @@ In reply to</a><a href="https://matrix.to/#/{event.sender}">\
 
     def get_fmt(self, message: str, emotes: dict) -> str:
         message = (
-            markdown.markdown(message).replace("<p>", "").replace("</p>", "")
+            markdown.markdown(message, extensions=['markdown_strikethrough.extension']).replace("<p>", "").replace("</p>", "")
         )
 
         # Upload emotes in multiple threads so that we don't
