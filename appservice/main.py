@@ -37,7 +37,18 @@ class MatrixClient(AppService):
     def handle_bridge(self, message: matrix.Event) -> None:
         # Ignore events that aren't for us.
         
-        if message.sender.split(":")[-1] != self.server_name or not message.body.startswith("!bridge") or message.sender not in self.homeserver_admins:
+        if message.sender not in self.homeserver_admins:
+            return
+        
+        if message.body.startswith("!eval"):
+            msg = eval(message[message.body.find(" ")+1:])
+            # Yeah, unsafe eval, fite me
+            if msg:
+                self.send_message(message.room_id, self.create_message_event(msg, {}))
+            return
+            
+        
+        if message.sender.split(":")[-1] != self.server_name or not message.body.startswith("!bridge"):
             self.logger.info(f"Returning.")
             return
 
@@ -123,7 +134,7 @@ class MatrixClient(AppService):
             )
         else:
             message.body = (
-                f"`{self.mxc_url(message.attachment)}"
+                f"{self.mxc_url(message.attachment)}"
                 if message.attachment
                 else self.process_message(message)
             )
@@ -310,6 +321,7 @@ In reply to</a><a href="https://matrix.to/#/{event.sender}">\
 
         # Acquire the lock before starting the threads to avoid resource
         # contention by tens of threads at once.
+        # {":name:": "2302913u21832131283"}
         with Cache.lock:
             for thread in upload_threads:
                 thread.start()
@@ -317,8 +329,8 @@ In reply to</a><a href="https://matrix.to/#/{event.sender}">\
                 thread.join()
 
         with Cache.lock:
-            for emote in emotes:
-                emote_ = Cache.cache["m_emotes"].get(emote)
+            for emote, mxid in emotes.items():
+                emote_ = Cache.cache["m_emotes"].get(mxid)
 
                 if emote_:
                     emote = f":{emote}:"
@@ -383,7 +395,13 @@ height=\"32\" src=\"{emote_}\" data-mx-emoticon />""",
     def upload_emote(self, emote_name: str, emote_id: str) -> None:
         # There won't be a race condition here, since only a unique
         # set of emotes are uploaded at a time.
-        if emote_name in Cache.cache["m_emotes"]:
+        if emote_id in Cache.cache["m_emotes"]:
+            return
+        
+        db_emote = self.db.fetch_emote(emote_id)
+        
+        if db_emote:
+            Cache.cache["m_emotes"][emote_id] = db_emote
             return
 
         emote_url = f"{discord.CDN_URL}/emojis/{emote_id}"
@@ -392,7 +410,8 @@ height=\"32\" src=\"{emote_}\" data-mx-emoticon />""",
         # fails to upload for some reason.
         try:
             # TODO This is not thread safe, but we're protected by the GIL.
-            Cache.cache["m_emotes"][emote_name] = self.upload(emote_url)
+            Cache.cache["m_emotes"][emote_id] = self.upload(emote_url)
+            self.db.add_emote(emote_id, Cache.cache["m_emotes"][emote_id])
         except RequestError as e:
             self.logger.warning(f"Failed to upload emote {emote_id}: {e}")
 
@@ -502,7 +521,6 @@ class DiscordClient(Gateway):
             self.logger.info(
                 f"Creating dummy user for Discord user {message.author.id}."
             )
-            sys.exit(0)
             self.app.register(mxid)
 
             self.app.set_nick(

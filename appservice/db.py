@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import threading
-from typing import List
+from typing import List, Optional
 
 
 class DataBase:
@@ -33,6 +33,10 @@ class DataBase:
         self.cur.execute(
             "CREATE TABLE users(mxid TEXT PRIMARY KEY, "
             "avatar_url TEXT, username TEXT);"
+        )
+        
+        self.cur.execute(
+            "CREATE TABLE emotes(emote_id TEXT PRIMARY KEY, mxid TEXT);"
         )
 
         self.conn.commit()
@@ -80,6 +84,11 @@ class DataBase:
             )
             self.conn.commit()
 
+    def add_emote(self, emote_id: str, mxid: str) -> None:
+        with self.lock:
+            self.cur.execute("INSERT INTO emotes (emote_id, mxid) VALUES (?, ?)", [emote_id, mxid])
+            self.conn.commit()
+
     def get_channel(self, room_id: str) -> str:
         """
         Get the corresponding channel ID for a given room ID.
@@ -118,3 +127,9 @@ class DataBase:
             user = self.cur.fetchone()
 
         return {} if not user else user
+    
+    def fetch_emote(self, emote_id: str) -> Optional[str]:
+        with self.lock:
+            self.cur.execute("SELECT mxid FROM emotes where emote_id = ?", [emote_id])
+            mxid = self.cur.fetchone()
+            return mxid["mxid"] if mxid else None

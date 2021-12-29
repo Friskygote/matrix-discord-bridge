@@ -121,8 +121,7 @@ class Message:
         self.referenced_message = Message(ref) if ref else None
 
         author = message.get("author")
-        logger.info(author)
-        logger.info(message)
+
         self.author = User(author) if author else None
 
         self.stickers = [
