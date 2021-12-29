@@ -185,7 +185,7 @@ class MatrixClient(AppService):
             "visibility": "private",
             "invite": [sender],
             "creation_content": {"m.federate": True},
-            "room_version": 9
+            "room_version": 9,
             "initial_state": [
                 {
                     "type": "m.room.join_rules",
