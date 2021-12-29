@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-
+import logging
 from misc import dict_cls
+
+logger = logging.getLogger("discord")
 
 CDN_URL = "https://cdn.discordapp.com"
 ID_LEN = 18
@@ -108,6 +110,7 @@ class Message:
         self.content = message.get("content", "")
         self.id = message["id"]
         self.webhook_id = message.get("webhook_id", "")
+        self.application_id = message.get("application_id", "")
 
         self.mentions = [
             User(mention) for mention in message.get("mentions", [])
@@ -118,7 +121,8 @@ class Message:
         self.referenced_message = Message(ref) if ref else None
 
         author = message.get("author")
-
+        logger.info(author)
+        logger.info(message)
         self.author = User(author) if author else None
 
         self.stickers = [

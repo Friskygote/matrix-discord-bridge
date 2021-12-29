@@ -123,7 +123,7 @@ class MatrixClient(AppService):
             )
         else:
             message.body = (
-                f"`{message.body}`: {self.mxc_url(message.attachment)}"
+                f"`{self.mxc_url(message.attachment)}"
                 if message.attachment
                 else self.process_message(message)
             )
@@ -491,7 +491,7 @@ class DiscordClient(Gateway):
         Discord user.
         """
 
-        if message.webhook_id:
+        if message.webhook_id and not message.application_id:
             hashed = hash_str(message.author.username)
             message.author.id = str(int(message.author.id) + hashed)
 
@@ -502,6 +502,7 @@ class DiscordClient(Gateway):
             self.logger.info(
                 f"Creating dummy user for Discord user {message.author.id}."
             )
+            sys.exit(0)
             self.app.register(mxid)
 
             self.app.set_nick(
