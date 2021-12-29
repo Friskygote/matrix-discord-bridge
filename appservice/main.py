@@ -386,7 +386,7 @@ height=\"32\" src=\"{emote_}\" data-mx-emoticon />""",
                     # '> <@_discord_1234:localhost> Message'
                     for replace in (mention, username):
                         message = message.replace(
-                            replace, f"<@{match.group()}>"
+                            replace, f"@{match.group()}"
                         )
 
         # We trim the message later as emotes take up extra characters too.
