@@ -36,9 +36,9 @@ class MatrixClient(AppService):
 
     def handle_bridge(self, message: matrix.Event) -> None:
         # Ignore events that aren't for us.
-        if message.sender.split(":")[
-            -1
-        ] != self.server_name or not message.body.startswith("!bridge"):
+        
+        if message.sender.split(":")[-1] != self.server_name or not message.body.startswith("!bridge") or message.sender not in self.homeserver_admins:
+            self.logger.info(f"Returning.")
             return
 
         # Get the channel ID.
@@ -92,7 +92,7 @@ class MatrixClient(AppService):
             or not message.body
         ):
             return
-
+        self.logger.info(f"On message.")
         # Handle bridging commands.
         self.handle_bridge(message)
 
@@ -185,7 +185,7 @@ class MatrixClient(AppService):
             "visibility": "private",
             "invite": [sender],
             "creation_content": {"m.federate": True},
-            "room_version": 9,
+            "room_version": "9",
             "initial_state": [
                 {
                     "type": "m.room.join_rules",

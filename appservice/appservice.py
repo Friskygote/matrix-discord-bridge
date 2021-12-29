@@ -21,6 +21,7 @@ class AppService(bottle.Bottle):
         self.base_url = config["homeserver"]
         self.server_name = config["server_name"]
         self.user_id = f"@{config['user_id']}:{self.server_name}"
+        self.homeserver_admins = config["admins"]
         self.http = http
         self.logger = logging.getLogger("appservice")
 
@@ -29,6 +30,7 @@ class AppService(bottle.Bottle):
             "m.room.member": "on_member",
             "m.room.message": "on_message",
             "m.room.redaction": "on_redaction",
+            "m.sticker": "on_message"
         }
 
         # Add route for bottle.
@@ -47,6 +49,7 @@ class AppService(bottle.Bottle):
             "m.room.member",
             "m.room.message",
             "m.room.redaction",
+            "m.sticker"
         ):
             obj = matrix.Event(event)
         else:
