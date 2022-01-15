@@ -1,3 +1,4 @@
+import re
 from html.parser import HTMLParser
 from typing import Optional, Tuple, List
 
@@ -12,10 +13,12 @@ def search_attr(attrs: List[Tuple[str, Optional[str]]], searched: str) -> Option
 
 
 class MatrixParser(HTMLParser):
-    message: str = ""
-    current_link: str = ""
-    c_tags: list[str] = []
-    list_num: int = 0
+    def __init__(self):
+        super().__init__()
+        self.message: str = ""
+        self.current_link: str = ""
+        self.c_tags: list[str] = []
+        self.list_num: int = 0
 
     def search_for_feature(self, acceptable_features: Tuple[str, ...]) -> Optional[str]:
         """Searches for certain feature in opened HTML tags for given text, if found returns the tag, if not returns None"""
@@ -54,15 +57,37 @@ class MatrixParser(HTMLParser):
         elif tag == "p":
             self.message += "\n"
         elif tag == "a":
-            # <a href=\"https://e621.net\">test</a>
-            self.current_link = search_attr(attrs, "href") or ""
+            self.parse_mentions(attrs)
         elif tag == "mx-reply":
-
-        elif tag == "img":
-
+            return
+        elif tag == "img":  # TODO At least make it a link to Matrix URL
+            emote_name = search_attr(attrs, "title") or ""
+            emote_ = Cache.cache["d_emotes"].get(emote_name)
+            if emote_:
+                self.message += emote_
+            else:
+                self.message += emote_name
         elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self.message += headers[tag]
         # ignore font tag
+
+    def parse_mentions(self, attrs):
+        self.current_link = search_attr(attrs, "href") or ""
+        if self.current_link.startswith("https://matrix.to/#/"):
+            target = self.current_link[20:]
+            if target.startswith("@"):
+                self.message += self.parse_user(target)
+            # Rooms will be handled by handle_data on data
+
+    def parse_user(self, target: str):
+        if is_discord_user(target):
+            snowflake = re.search(snowflake_regex, target).group(1)
+            if snowflake:
+                self.current_link = None  # Meaning, skip adding text
+                return f"<@{snowflake}>"
+        else:
+            # Matrix user, not Discord appservice account
+            return ""
 
     def handle_data(self, data):
         if self.c_tags[-1] != "code":  # May IndexError!
@@ -70,6 +95,8 @@ class MatrixParser(HTMLParser):
         # TODO Escape Matrix characters when in code blocks
         if self.current_link:
             self.message += f"[{data}]({self.current_link})"
+        elif self.current_link is None:
+            self.current_link = ""
         else:
             self.message += data  # strip new lines, they will be mostly handled by parser
 
@@ -88,5 +115,3 @@ class MatrixParser(HTMLParser):
                 self.message += "`"
         elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self.message += headers[tag][::-1]
-
-matrixparser = MatrixParser()

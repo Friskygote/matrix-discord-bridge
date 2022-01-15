@@ -18,6 +18,7 @@ from cache import Cache
 from db import DataBase
 from errors import RequestError
 from gateway import Gateway
+from message_parser import MatrixParser
 from misc import dict_cls, except_deleted, hash_str
 
 
@@ -116,6 +117,22 @@ class MatrixClient(AppService):
             channel_id, self.discord.webhook_name
         )
 
+        # Let's take a few scenarios that can happen. We should handle at least 2 special message cases: replies and edits
+        # Replies should ask for replied to message event, parse that event, limit output to maybe like 500 characters
+        # and prepend it to main message in form of a quote, we can't just use Discord's reply because Discord being dumb
+        # https://github.com/discord/discord-api-docs/discussions/3282
+        # Edits should look at previously edited message, if it was a reply they need to handle all that reply logic again
+        # However edits lose replied to field so we have to fetch original message (wooho?) and get it from that instead
+
+        if message.reply and message.reply.get("event_id"):
+            replied_to_body = except_deleted(self.get_event)(message.reply["event_id"], message.room_id)
+            if replied_to_body:
+
+            else:
+                message.body += "> 🗑️💬\n"  # I really don't want to add translatable strings to this project
+
+        message.body = self.parse_message(message)
+
         if message.relates_to and message.reltype == "m.replace":
             with Cache.lock:
                 message_id = Cache.cache["m_messages"].get(message.relates_to)
@@ -146,6 +163,14 @@ class MatrixClient(AppService):
 
             with Cache.lock:
                 Cache.cache["m_messages"][message.id] = message_id
+
+    @staticmethod
+    def parse_message(message: matrix.Event):
+        if message.formatted_body:
+            parser = MatrixParser()
+            parser.feed(message.formatted_body)
+            message.body = parser.message
+        return message.body
 
     def on_redaction(self, event: matrix.Event) -> None:
         with Cache.lock:
@@ -360,37 +385,6 @@ height=\"32\" src=\"{emote_}\" data-mx-emoticon />""",
         message = event.new_body if event.new_body else event.body
 
         emotes = re.findall(r":(\w*):", message)
-
-        mentions = list(
-            re.finditer(self.mention_regex(encode=False, id_as_group=True), event.formatted_body)
-        )
-        # For clients that properly encode mentions.
-        # 'https://matrix.to/#/%40_discord_...%3Adomain.tld'
-        mentions.extend(
-            re.finditer(self.mention_regex(encode=True, id_as_group=True), event.formatted_body)
-        )
-
-        with Cache.lock:
-            for emote in set(emotes):
-                emote_ = Cache.cache["d_emotes"].get(emote)
-                if emote_:
-                    message = message.replace(f":{emote}:", emote_)
-
-        for mention in set(mentions):
-            # Unquote just in-case we matched an encoded username.
-            username = self.db.fetch_user(urllib.parse.unquote(mention.group(0))).get(
-                "username"
-            )
-            if username:
-                if mention.group(2):
-                    # Replace mention with plain text for hashed users (webhooks)
-                    message = message.replace(mention.group(0), f"@{username}")
-                else:
-                    # Replace the 'mention' so that the user is tagged
-                    # in the case of replies aswell.
-                    # '> <@_discord_1234:localhost> Message'
-                    for replace in (mention.group(0), username):
-                        message = message.replace(replace, f"<@{mention.group(1)}>")
 
         # We trim the message later as emotes take up extra characters too.
         return message[: discord.MESSAGE_LIMIT]
