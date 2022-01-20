@@ -124,14 +124,14 @@ class MatrixClient(AppService):
         # Edits should look at previously edited message, if it was a reply they need to handle all that reply logic again
         # However edits lose replied to field so we have to fetch original message (wooho?) and get it from that instead
 
+        content = ""
+
         if message.reply and message.reply.get("event_id"):
             replied_to_body = except_deleted(self.get_event)(message.reply["event_id"], message.room_id)
             if replied_to_body:
-
+                content += "> " + self.parse_message(replied_to_body)[:600].replace("\n", "\n> ") + "\n"
             else:
-                message.body += "> 🗑️💬\n"  # I really don't want to add translatable strings to this project
-
-        message.body = self.parse_message(message)
+                content += "> 🗑️💬\n"  # I really don't want to add translatable strings to this project
 
         if message.relates_to and message.reltype == "m.replace":
             with Cache.lock:
@@ -142,32 +142,31 @@ class MatrixClient(AppService):
             if not message_id or not message.new_body:
                 return
 
-            message.new_body = self.process_message(message)
+            content += self.parse_message(message)[:discord.MESSAGE_LIMIT]
 
             except_deleted(self.discord.edit_webhook)(
-                message.new_body, message_id, webhook
+                content, message_id, webhook
             )
         else:
-            message.body = (
+            content += (
                 f"{self.mxc_url(message.attachment)}"
                 if message.attachment
-                else self.process_message(message)
+                else self.parse_message(message)[:discord.MESSAGE_LIMIT]
             )
 
             message_id = self.discord.send_webhook(
                 webhook,
                 self.mxc_url(author.avatar_url) if author.avatar_url else None,
-                message.body,
+                content,
                 author.display_name if author.display_name else message.sender,
             ).id
 
             with Cache.lock:
                 Cache.cache["m_messages"][message.id] = message_id
 
-    @staticmethod
-    def parse_message(message: matrix.Event):
+    def parse_message(self, message: matrix.Event):
         if message.formatted_body:
-            parser = MatrixParser()
+            parser = MatrixParser(self.db, self.mention_regex(False, True))
             parser.feed(message.formatted_body)
             message.body = parser.message
         return message.body
@@ -383,8 +382,6 @@ height=\"32\" src=\"{emote_}\" data-mx-emoticon />""",
 
     def process_message(self, event: matrix.Event) -> str:
         message = event.new_body if event.new_body else event.body
-
-        emotes = re.findall(r":(\w*):", message)
 
         # We trim the message later as emotes take up extra characters too.
         return message[: discord.MESSAGE_LIMIT]
