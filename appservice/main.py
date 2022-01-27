@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import threading
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union, Optional
 
 import markdown
 import urllib3
@@ -97,6 +97,15 @@ class MatrixClient(AppService):
         self.logger.info(f"Joining direct message room '{event.room_id}'.")
         self.join_room(event.room_id)
 
+    def append_replied_to_msg(self, message: matrix.Event) -> str:
+        if message.reply and message.reply.get("event_id"):
+            replied_to_body: Optional[matrix.Event] = except_deleted(self.get_event)(message.reply["event_id"], message.room_id)
+            if replied_to_body:
+                return "> " + self.parse_message(replied_to_body, limit=600).replace("\n", "\n> ") + "\n"
+            else:
+                return "> 🗑️💬\n"  # I really don't want to add translatable strings to this project
+        return ""
+
     def on_message(self, message: matrix.Event) -> None:
         if (
             message.sender.startswith((f"@{self.format}", self.user_id))
@@ -126,49 +135,51 @@ class MatrixClient(AppService):
 
         content = ""
 
-        if message.reply and message.reply.get("event_id"):
-            replied_to_body = except_deleted(self.get_event)(message.reply["event_id"], message.room_id)
-            if replied_to_body:
-                content += "> " + self.parse_message(replied_to_body)[:600].replace("\n", "\n> ") + "\n"
-            else:
-                content += "> 🗑️💬\n"  # I really don't want to add translatable strings to this project
-
         if message.relates_to and message.reltype == "m.replace":
             with Cache.lock:
                 message_id = Cache.cache["m_messages"].get(message.relates_to)
 
-            # TODO validate if the original author sent the edit.
+            original_message: Optional[matrix.Event] = except_deleted(self.get_event)(message.relates_to, message.room_id)
 
             if not message_id or not message.new_body:
                 return
 
-            content += self.parse_message(message)[:discord.MESSAGE_LIMIT]
+            if original_message:
+                if message.sender != original_message.sender:
+                    return
+                content += self.append_replied_to_msg(original_message)
+            # If new body has formatted form, use that
+            message.body = message.new_body.get("body", "")
+            message.formatted_body = message.new_body.get("formatted_body", "")
+            content += self.parse_message(message)
 
             except_deleted(self.discord.edit_webhook)(
-                content, message_id, webhook
+                content[:discord.MESSAGE_LIMIT], message_id, webhook
             )
         else:
+            content += self.append_replied_to_msg(message)
             content += (
                 f"{self.mxc_url(message.attachment)}"
                 if message.attachment
-                else self.parse_message(message)[:discord.MESSAGE_LIMIT]
+                else self.parse_message(message)
             )
 
             message_id = self.discord.send_webhook(
                 webhook,
                 self.mxc_url(author.avatar_url) if author.avatar_url else None,
-                content,
+                content[:discord.MESSAGE_LIMIT],
                 author.display_name if author.display_name else message.sender,
             ).id
 
             with Cache.lock:
                 Cache.cache["m_messages"][message.id] = message_id
 
-    def parse_message(self, message: matrix.Event):
+    def parse_message(self, message: matrix.Event, limit: int = discord.MESSAGE_LIMIT):
         if message.formatted_body:
-            parser = MatrixParser(self.db, self.mention_regex(False, True))
+            parser = MatrixParser(self.db, self.mention_regex(False, True), limit=limit)
             parser.feed(message.formatted_body)
             message.body = parser.message
+        self.logger.info(message.body)
         return message.body
 
     def on_redaction(self, event: matrix.Event) -> None:
@@ -379,12 +390,6 @@ height=\"32\" src=\"{emote_}\" data-mx-emoticon />""",
         hashed = f"(?:-{snowflake})?"
 
         return f"{mention}{self.format}{snowflake}{hashed}{colon}{re.escape(self.server_name)}"
-
-    def process_message(self, event: matrix.Event) -> str:
-        message = event.new_body if event.new_body else event.body
-
-        # We trim the message later as emotes take up extra characters too.
-        return message[: discord.MESSAGE_LIMIT]
 
     def upload_emote(self, emote_name: str, emote_id: str) -> None:
         # There won't be a race condition here, since only a unique

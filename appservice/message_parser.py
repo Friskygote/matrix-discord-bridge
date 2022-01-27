@@ -17,7 +17,7 @@ def search_attr(attrs: List[Tuple[str, Optional[str]]], searched: str) -> Option
 
 
 class MatrixParser(HTMLParser):
-    def __init__(self, db: DataBase, mention_regex: str):
+    def __init__(self, db: DataBase, mention_regex: str, limit: int = 0):
         super().__init__()
         self.message: str = ""
         self.current_link: str = ""
@@ -25,6 +25,7 @@ class MatrixParser(HTMLParser):
         self.list_num: int = 1
         self.db: DataBase = db
         self.snowflake_regex: str = mention_regex
+        self.limit = limit
 
     def search_for_feature(self, acceptable_features: Tuple[str, ...]) -> Optional[str]:
         """Searches for certain feature in opened HTML tags for given text, if found returns the tag, if not returns None"""
@@ -38,33 +39,33 @@ class MatrixParser(HTMLParser):
             return
         self.c_tags.append(tag)
         if tag in htmltomarkdown:
-            self.message += htmltomarkdown[tag]
+            self.expand_message(htmltomarkdown[tag])
         elif tag == "code":
             if attrs:  # What if it's not the first class?
-                self.message += "```" + attrs[0][1].split("language-", 1)[-1] + "\n"
+                self.expand_message("```" + attrs[0][1].split("language-", 1)[-1] + "\n")
             else:
-                self.message += "`"
+                self.expand_message("`")
         elif tag == "span":
             spoiler = search_attr(attrs, "data-mx-spoiler")
             if spoiler is not None:
                 if spoiler:  # Spoilers can have a reason https://github.com/matrix-org/matrix-doc/pull/2010
-                    self.message += f"({spoiler})"
-                self.message += "||"
+                    self.expand_message(f"({spoiler})")
+                self.expand_message("||")
                 self.c_tags.append("spoiler")  # Always after span tag
         elif tag == "li":
             list_type = self.search_for_feature(("ul", "ol"))
             if list_type == "ol":
-                self.message += "\n{}. ".format(self.list_num)
+                self.expand_message("\n{}. ".format(self.list_num))
                 self.list_num += 1
             else:
-                self.message += "\n• "
+                self.expand_message("\n• ")
         elif tag in "br":
             self.c_tags.pop()
-            self.message += "\n"
+            self.expand_message("\n")
             if self.search_for_feature(("blockquote",)):
-                self.message += "> "
+                self.expand_message("> ")
         elif tag == "p":
-            self.message += "\n"
+            self.expand_message("\n")
         elif tag == "a":
             self.parse_mentions(attrs)
         elif tag == "mx-reply":  # we handle replies separately for best effect
@@ -73,13 +74,13 @@ class MatrixParser(HTMLParser):
             emote_name = search_attr(attrs, "title")
             emote_ = Cache.cache["d_emotes"].get(emote_name)
             if emote_:
-                self.message += emote_
+                self.expand_message(emote_)
             else:
-                self.message += emote_name
+                self.expand_message(emote_name)
         elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
-            self.message += headers[tag]
+            self.expand_message(headers[tag])
         elif tag == "blockquote":
-            self.message += "> "
+            self.expand_message("> ")
         # ignore font tag
 
     def parse_mentions(self, attrs):
@@ -87,7 +88,7 @@ class MatrixParser(HTMLParser):
         if self.current_link.startswith("https://matrix.to/#/"):
             target = self.current_link[20:]
             if target.startswith("@"):
-                self.message += self.parse_user(target.split("?")[0])
+                self.expand_message(self.parse_user(target.split("?")[0]))
             # Rooms will be handled by handle_data on data
 
     def parse_user(self, target: str):
@@ -100,6 +101,11 @@ class MatrixParser(HTMLParser):
             # Matrix user, not Discord appservice account
             return ""
 
+    def expand_message(self, expansion: str):
+        if len(self.message) + len(expansion) > self.limit:  # TODO Close all tags in c_tags?
+            self.close()
+        self.message += expansion
+
     def is_discord_user(self, target: str) -> bool:
         return bool(self.db.fetch_user(target))
 
@@ -109,30 +115,29 @@ class MatrixParser(HTMLParser):
                 data = data.replace("\n", "")
             if "mx-reply" in self.c_tags:
                 return
-        # TODO Escape Matrix characters when in code blocks
         if self.current_link:
-            self.message += f"[{data}](<{self.current_link}>)"
+            self.expand_message(f"[{data}](<{self.current_link}>)")
             self.current_link = ""
         elif self.current_link is None:
             self.current_link = ""
         else:
-            self.message += data  # strip new lines, they will be mostly handled by parser
+            self.expand_message(data)  # strip new lines, they will be mostly handled by parser
 
     def handle_endtag(self, tag: str):
         if "mx-reply" in self.c_tags and tag != "mx-reply":
             return
         if tag in htmltomarkdown:
-            self.message += htmltomarkdown[tag]
+            self.expand_message(htmltomarkdown[tag])
         last_tag = self.c_tags.pop()
         if last_tag == "spoiler":
-            self.message += "||"
+            self.expand_message("||")
             self.c_tags.pop()  # guaranteed to be a span tag
         if tag == "ol":
             self.list_num = 1
         elif tag == "code":
             if self.c_tags:
-                self.message += "\n```"
+                self.expand_message("\n```")
             else:
-                self.message += "`"
+                self.expand_message("`")
         elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
-            self.message += headers[tag][::-1]
+            self.expand_message(headers[tag][::-1])

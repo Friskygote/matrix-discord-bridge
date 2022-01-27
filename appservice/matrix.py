@@ -26,4 +26,4 @@ class Event:
         self.relates_to = rel.get("event_id")
         self.reltype = rel.get("rel_type")
         self.reply: dict = rel.get("m.in_reply_to")
-        self.new_body = content.get("m.new_content", {}).get("body", "")
+        self.new_body = content.get("m.new_content", {})
