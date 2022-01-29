@@ -100,7 +100,7 @@ class MatrixClient(AppService):
     def append_replied_to_msg(self, message: matrix.Event) -> str:
         if message.reply and message.reply.get("event_id"):
             replied_to_body: Optional[matrix.Event] = except_deleted(self.get_event)(message.reply["event_id"], message.room_id)
-            if replied_to_body:
+            if replied_to_body and not replied_to_body.redacted_because:
                 return "> " + self.parse_message(replied_to_body, limit=600).replace("\n", "\n> ") + "\n"
             else:
                 return "> 🗑️💬\n"  # I really don't want to add translatable strings to this project
@@ -179,7 +179,6 @@ class MatrixClient(AppService):
             parser = MatrixParser(self.db, self.mention_regex(False, True), limit=limit)
             parser.feed(message.formatted_body)
             message.body = parser.message
-        self.logger.info(message.body)
         return message.body
 
     def on_redaction(self, event: matrix.Event) -> None:

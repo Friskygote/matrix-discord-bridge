@@ -20,7 +20,7 @@ class Event:
         self.room_id = event["room_id"]
         self.sender = event["sender"]
         self.state_key = event.get("state_key", "")
-
+        self.redacted_because = event.get("redacted_because", {})
         rel = content.get("m.relates_to", {})
 
         self.relates_to = rel.get("event_id")

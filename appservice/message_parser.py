@@ -41,8 +41,8 @@ class MatrixParser(HTMLParser):
         if tag in htmltomarkdown:
             self.expand_message(htmltomarkdown[tag])
         elif tag == "code":
-            if attrs:  # What if it's not the first class?
-                self.expand_message("```" + attrs[0][1].split("language-", 1)[-1] + "\n")
+            if self.search_for_feature(("pre",)):
+                self.expand_message("```" + (search_attr(attrs, "class") or "")[9:] + "\n")
             else:
                 self.expand_message("`")
         elif tag == "span":
