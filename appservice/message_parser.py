@@ -16,6 +16,11 @@ def search_attr(attrs: List[Tuple[str, Optional[str]]], searched: str) -> Option
     return None
 
 
+def escape_markdown(to_escape: str):
+    to_escape.replace("\\", "\\\\")
+    return re.sub(r"([`_*~:<>{}@|])", r"\\\1", to_escape)
+
+
 class MatrixParser(HTMLParser):
     def __init__(self, db: DataBase, mention_regex: str, limit: int = 0):
         super().__init__()
@@ -111,8 +116,8 @@ class MatrixParser(HTMLParser):
 
     def handle_data(self, data):
         if self.c_tags:
-            if self.c_tags[-1] != "code":  # May IndexError!
-                data = data.replace("\n", "")
+            if self.c_tags[-1] != "code":
+                data = escape_markdown(data.replace("\n", ""))
             if "mx-reply" in self.c_tags:
                 return
         if self.current_link:
@@ -135,7 +140,7 @@ class MatrixParser(HTMLParser):
         if tag == "ol":
             self.list_num = 1
         elif tag == "code":
-            if self.c_tags:
+            if self.search_for_feature(("pre",)):
                 self.expand_message("\n```")
             else:
                 self.expand_message("`")
