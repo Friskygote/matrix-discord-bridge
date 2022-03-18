@@ -18,7 +18,7 @@ from cache import Cache
 from db import DataBase
 from errors import RequestError
 from gateway import Gateway
-from message_parser import MatrixParser
+from message_parser import MatrixParser, escape_markdown
 from misc import dict_cls, except_deleted, hash_str
 
 
@@ -98,10 +98,12 @@ class MatrixClient(AppService):
         self.join_room(event.room_id)
 
     def append_replied_to_msg(self, message: matrix.Event) -> str:
+        def escape_urls(message_: str):
+            return re.sub(r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", "<\g<0>>", message_)
         if message.reply and message.reply.get("event_id"):
             replied_to_body: Optional[matrix.Event] = except_deleted(self.get_event)(message.reply["event_id"], message.room_id)
             if replied_to_body and not replied_to_body.redacted_because:
-                return "> " + self.parse_message(replied_to_body, limit=600).replace("\n", "\n> ").strip() + "\n"
+                return "> " + escape_urls(self.parse_message(replied_to_body, limit=600, generate_link=False).replace("\n", "\n> ").strip()) + "\n"
             else:
                 return "> 🗑️💬\n"  # I really don't want to add translatable strings to this project
         return ""
@@ -163,7 +165,8 @@ class MatrixClient(AppService):
                 if message.attachment
                 else self.parse_message(message)
             )
-
+            if not content or content.isspace():
+                return
             message_id = self.discord.send_webhook(
                 webhook,
                 self.mxc_url(author.avatar_url) if author.avatar_url else None,
@@ -174,14 +177,28 @@ class MatrixClient(AppService):
             with Cache.lock:
                 Cache.cache["m_messages"][message.id] = message_id
 
-    def parse_message(self, message: matrix.Event, limit: int = discord.MESSAGE_LIMIT):
+    @staticmethod
+    def create_msg_link(room_id: str, event: str) -> str:
+        return f"[[…]](<https://matrix.to/#/{room_id}/{event}>)"
+
+    def parse_message(self, message: matrix.Event, limit: int = discord.MESSAGE_LIMIT, generate_link: bool = True):
         if message.formatted_body:
-            parser = MatrixParser(self.db, self.mention_regex(False, True), limit=limit)
+            msg_link = self.create_msg_link(message.room_id, message.id) if generate_link else ""
+            parser = MatrixParser(self.db, self.mention_regex(False, True), self.mxc_url, limit=limit-len(msg_link))
             try:
                 parser.feed(message.formatted_body)
             except StopIteration:
                 self.logger.debug("Message has exceeded maximum allowed character limit, processing what we already have")
-            message.body = parser.message
+                message.body = parser.message
+                # Create a link to message for Discord side to spread the word about Matrix superior character limit
+                if generate_link:
+                    message.body += msg_link
+            else:
+                message.body = parser.message
+        else:
+            # if we escape : in protocol prefix of a link is going to be plaintext on Discord, we don't want that
+            # but we still have to escape : for emojis so this is a measure for that
+            message.body = escape_markdown(message.body).replace("\\://", "://")
         return message.body
 
     def on_redaction(self, event: matrix.Event) -> None:
