@@ -153,6 +153,18 @@ class AppService(bottle.Bottle):
 
         return resp["content_uri"]
 
+    def set_alias(self, room: str, room_alias: str):
+        """
+        Set a room alias to specific one
+        """
+        resp = self.send(
+            "PUT",
+            content={"room_id": f"{room}"},
+            endpoint="/_matrix/client/v3/directory/room/{}".format(urllib.parse.quote_plus(room_alias)),
+        )
+        return resp
+
+
     def send_message(
         self,
         room_id: str,

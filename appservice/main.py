@@ -47,7 +47,13 @@ class MatrixClient(AppService):
             if msg:
                 self.send_message(message.room_id, self.create_message_event(msg, {}))
             return
-            
+
+        if message.body.startswith("!join"):
+            self.join_room(message.body.split()[1])
+
+        if message.body.startswith("!connect"):
+            msg = message.body.split()
+            print(self.set_alias(msg[1], msg[2]))
         
         if message.sender.split(":")[-1] != self.server_name or not message.body.startswith("!bridge"):
             return
@@ -248,7 +254,6 @@ class MatrixClient(AppService):
             "visibility": "private",
             "invite": [sender],
             "creation_content": {"m.federate": True},
-            "room_version": "9",
             "initial_state": [
                 {
                     "type": "m.room.join_rules",
