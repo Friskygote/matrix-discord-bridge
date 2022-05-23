@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import urllib.parse
 from typing import List, Dict
 
@@ -8,6 +9,7 @@ import urllib3
 import websockets
 
 import discord
+from errors import RateLimit
 from misc import dict_cls, log_except, request
 
 
@@ -221,13 +223,19 @@ class Gateway:
             # Disable 'everyone' and 'role' mentions.
             "allowed_mentions": {"parse": ["users"]},
         }
-
-        resp = self.send(
-            "POST",
-            f"/webhooks/{webhook.id}/{webhook.token}",
-            payload,
-            {"wait": True},
-        )
+        while True:
+            try:
+                resp = self.send(
+                    "POST",
+                    f"/webhooks/{webhook.id}/{webhook.token}",
+                    payload,
+                    {"wait": True},
+                )
+            except RateLimit as e:
+                self.logger.warning("We are being rate-limited, waiting our turn...")
+                time.sleep(e.timeout+0.1)
+            else:
+                break
 
         return discord.Message(resp)
 

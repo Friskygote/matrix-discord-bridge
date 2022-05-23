@@ -120,6 +120,10 @@ class MatrixClient(AppService):
             or not message.body
         ):
             return
+
+        if Cache.cache["m_messages"].get(message.id, None) is not None:
+            self.logger.debug("{} message is already in the cache! Abandoning our post!".format(message.id))
+            return
         # Handle bridging commands.
         self.handle_bridge(message)
 
@@ -204,6 +208,7 @@ class MatrixClient(AppService):
         else:
             # if we escape : in protocol prefix of a link is going to be plaintext on Discord, we don't want that
             # but we still have to escape : for emojis so this is a measure for that
+            # We still have broken _ in URLs :(
             message.body = escape_markdown(message.body).replace("\\://", "://")
         return message.body
 

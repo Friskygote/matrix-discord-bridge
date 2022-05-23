@@ -3,3 +3,9 @@ class RequestError(Exception):
         super().__init__(*args)
 
         self.status = status
+
+
+class RateLimit(Exception):
+    def __init__(self, timeout: float):
+        super().__init__()
+        self.timeout = timeout

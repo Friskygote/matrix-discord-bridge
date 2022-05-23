@@ -1,10 +1,11 @@
 import json
+import time
 from dataclasses import fields
 from typing import Any
 
 import urllib3
 
-from errors import RequestError
+from errors import RequestError, RateLimit
 
 
 def dict_cls(d: dict, cls: Any) -> Any:
@@ -44,6 +45,9 @@ def request(fn):
             resp = fn(*args, **kwargs)
         except urllib3.exceptions.HTTPError as e:
             raise RequestError(None, f"Failed to connect: {e}") from None
+
+        if resp.status == 429:  # rate-limit
+            raise RateLimit(json.loads(resp.data)["retry_after"])
 
         if resp.status < 200 or resp.status >= 300:
             raise RequestError(
