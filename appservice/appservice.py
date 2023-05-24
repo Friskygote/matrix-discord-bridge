@@ -31,9 +31,15 @@ class AppService(bottle.Bottle):
             "m.room.redaction": "on_redaction",
         }
 
-        # Add route for bottle.
+        # Add route for bottle. Legacy route for Synapse, will be removed in the future https://spec.matrix.org/v1.6/application-service-api/#legacy-routes
         self.route(
             "/transactions/<transaction>",
+            callback=self.receive_event,
+            method="PUT",
+        )
+        
+        self.route(
+            "/_matrix/app/v1/transactions/<transaction>",
             callback=self.receive_event,
             method="PUT",
         )
