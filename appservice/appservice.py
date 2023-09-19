@@ -73,8 +73,11 @@ class AppService(bottle.Bottle):
         """
         Verify the homeserver's token and handle events.
         """
-
-        hs_token = bottle.request.query.getone("access_token")
+        hs_token = bottle.request.get_header('Authorization')
+        if hs_token is None:  # legacy auth before Synapse 1.7.1
+            hs_token = bottle.request.query.getone("access_token")
+        else:  # stripping "Bearer "
+            hs_token = hs_token[7:]
 
         if not hs_token:
             bottle.response.status = 401
